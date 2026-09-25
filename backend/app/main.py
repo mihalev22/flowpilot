@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from app.api import auth, clients, dashboard, requests, services, settings, webhooks
 from app.core.config import get_settings, validate_ai_config
 from app.core.exceptions import AppError
+from app.core.rate_limit import RateLimitMiddleware
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -22,6 +23,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="FlowPilot API", version="0.1.0", lifespan=lifespan)
+
+app.add_middleware(RateLimitMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
