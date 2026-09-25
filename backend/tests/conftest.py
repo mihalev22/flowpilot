@@ -14,6 +14,7 @@ from sqlalchemy.orm import close_all_sessions, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.core.config import Settings, get_settings
+from app.core.rate_limit import reset_rate_limits
 from app.core.security import hash_password
 from app.db.base import Base
 from app.db.session import get_db
@@ -89,6 +90,7 @@ def create_manager(db, business_id: int, email: str = "manager@test.ru") -> User
 @pytest.fixture(autouse=True)
 def reset_db():
     close_all_sessions()
+    reset_rate_limits()
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
     yield
