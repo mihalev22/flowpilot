@@ -1,276 +1,277 @@
 # FlowPilot
 
-AI-assisted intake for small businesses: customer messages from Telegram
-or the built-in web form are classified by an AI layer (intent, service,
-date/time, confidence), turned into trackable requests, and handed to
-managers through a lightweight CRM dashboard.
+AI-ассистент обработки входящих обращений для малого бизнеса: сообщения
+клиентов из Telegram или встроенной веб-формы классифицируются AI-слоем
+(намерение, услуга, дата/время, уверенность), превращаются в заявки и
+попадают к менеджерам в лёгкий CRM-дашборд.
 
-**Problem:** a small salon or studio gets bookings, price questions,
-complaints and reschedule requests mixed in one chat. Answering,
-trusting memory, and copy-pasting them into a notebook is where
-bookings get lost.
+**Проблема:** небольшой салон или студия получает записи, вопросы о
+ценах, жалобы и просьбы о переносе вперемешку в одном чате. Прочитать,
+разобрать, куда-то записать и не забыть — именно здесь теряются записи.
 
-**Solution:** a message lands on a webhook, gets validated, is
-interpreted by a swappable AI provider (mock by default, OpenAI/Qwen
-ready), and becomes a request with a confidence score. High-confidence
-requests flow straight into the pipeline; low-confidence ones are
-flagged for manual review.
+**Решение:** сообщение приходит на вебхук, проходит валидацию,
+интерпретируется сменяемым AI-провайдером (по умолчанию Mock, OpenAI и
+Qwen готовы к подключению) и становится заявкой с оценкой уверенности.
+Высокая уверенность — заявка сразу в работе; низкая — помечена для
+ручной проверки.
 
-> Status: **portfolio / demo project.** Fully dockerized and covered by
-> tests and a security review, but **not deployed to production** — see
+> Статус: **портфолио / демо-проект.** Полностью докеризован, покрыт
+> тестами и security review, но **не задеплоен в продакшен** — см.
 > [Known Limitations](#known-limitations).
 
 ```
-Client message → webhook → validation → AI analysis → structured JSON
-→ request in PostgreSQL → React dashboard → manager review
+Сообщение клиента → вебхук → валидация → AI-анализ → структурированный JSON
+→ заявка в PostgreSQL → React-дашборд → работа менеджера
 ```
 
-## Features
+## Возможности
 
-- JWT authentication with roles (`admin` / `manager`), enforced by the
-  backend (UI hiding is convenience, not the security layer).
-- Request pipeline: `NEW → IN_PROGRESS → CONFIRMED → COMPLETED` /
-  `CANCELLED` with full status history.
-- AI intent extraction with confidence-based triage: ≥0.85 auto,
-  0.60–0.85 manager review, <0.60 manual handling.
-- Swappable AI provider behind one interface: **Mock** (default, no API
-  key, Russian/English keyword matching), OpenAI, Qwen — with JSON
-  parsing, one retry, and safe fallback on provider errors.
-- Telegram webhook: secret-verified, idempotent (duplicate updates
-  never create duplicate requests).
-- Client directory with search and per-client request history.
-- Dashboard and analytics: status counts, 14-day trend, sources,
-  top services, recent requests.
-- Two-layer rate limiting: nginx `limit_req` + FastAPI in-memory
-  limiter (429 with `Retry-After`).
-- One-command Docker stack: PostgreSQL, backend, frontend, nginx.
-- Alembic migrations applied automatically on container start;
-  idempotent demo seed (only when `AI_MODE=mock`).
-- React frontend (Russian UI): 9 pages, loading/error/empty states,
-  skeletons, toasts; API types generated from the live OpenAPI schema.
+- JWT-аутентификация с ролями (`admin` / `manager`), проверка на
+  backend (сокрытие в UI — удобство, а не защита).
+- Конвейер заявок: `NEW → IN_PROGRESS → CONFIRMED → COMPLETED` /
+  `CANCELLED` с полной историей статусов.
+- Извлечение намерения с триажем по уверенности: ≥0.85 — авто,
+  0.60–0.85 — проверка менеджером, <0.60 — только ручная обработка.
+- Сменяемый AI-провайдер за одним интерфейсом: **Mock** (по умолчанию,
+  без API-ключа, keyword-matching на русском/английском), OpenAI, Qwen
+  — с парсингом JSON, одним ретраем и безопасным fallback при ошибках
+  провайдера.
+- Telegram-вебхук: проверка секрета, идемпотентность (повторные update
+  не создают дубликатов заявок).
+- Каталог клиентов с поиском и историей обращений по каждому.
+- Дашборд и аналитика: счётчики статусов, тренд за 14 дней, источники,
+  топ услуг, последние заявки.
+- Двухслойный rate limiting: nginx `limit_req` + in-memory лимитер
+  FastAPI (429 с `Retry-After`).
+- Docker-стек одной командой: PostgreSQL, backend, frontend, nginx.
+- Миграции Alembic применяются автоматически при старте контейнера;
+  идемпотентный демо-сид (только при `AI_MODE=mock`).
+- React-фронтенд (русский интерфейс): 9 страниц, состояния
+  загрузки/ошибки/пустые данные, скелетоны, тосты; типы API
+  генерируются из живой OpenAPI-схемы.
 
-## Architecture
+## Архитектура
 
 ```
-Telegram / Web form
+Telegram / веб-форма
         ↓
 POST /api/webhooks/telegram        POST /api/requests
-        ↓ secret check                    ↓ JWT
-      Nginx  — static files, reverse proxy, rate limiting (TLS in production)
+        ↓ проверка секрета                ↓ JWT
+      Nginx  — статика, reverse proxy, rate limiting (TLS в продакшене)
         ↓
-      FastAPI  — routing, validation, auth, rate limiting
+      FastAPI  — маршрутизация, валидация, авторизация, rate limiting
         ↓
-   Service layer  — RequestService, TelegramService, ClientService,
+   Слой сервисов  — RequestService, TelegramService, ClientService,
                     AIAnalysisService, AnalyticsService
         ↓                          ↓
-  AIProvider (Mock/OpenAI/Qwen)   Repositories
+  AIProvider (Mock/OpenAI/Qwen)   Репозитории
         ↓ AIResult (Pydantic)            ↓
         └──────────────►  PostgreSQL  ◄──┘
                             ↓
                         REST API
                             ↓
-                     React dashboard
+                  React-дашборд
 ```
 
-AI processing pipeline (the AI layer never writes to the database —
-it only proposes, services decide):
+AI-конвейер (AI-слой никогда не пишет в базу — он предлагает,
+сервисы решают):
 
 ```
-Message → AIProvider.analyze(text) → raw response
-        → JSON parsing + Pydantic validation → AIResult
-        → confidence check → auto / needs review / manual only
-        → RequestService writes Request + Message + AIAnalysis
+Сообщение → AIProvider.analyze(text) → сырой ответ
+        → парсинг JSON + Pydantic-валидация → AIResult
+        → проверка confidence → авто / на проверку / ручная
+        → RequestService записывает Request + Message + AIAnalysis
 ```
 
-## Tech Stack
+## Технологии
 
-| Area | Technologies |
+| Область | Технологии |
 |---|---|
-| Frontend | React 19, TypeScript, Vite, Tailwind CSS, TanStack Query, React Hook Form, Zod, openapi-typescript |
+| Фронтенд | React 19, TypeScript, Vite, Tailwind CSS, TanStack Query, React Hook Form, Zod, openapi-typescript |
 | Backend | Python, FastAPI, Pydantic, SQLAlchemy, Alembic, PyJWT, bcrypt, httpx |
-| Database | PostgreSQL 16 (SQLite in-memory for the test suite) |
-| Infrastructure | Docker, Docker Compose, nginx, multi-stage builds |
-| Security | JWT HS256, bcrypt, RBAC, two-layer rate limiting, env-only secrets |
-| Testing | pytest (67 tests), FastAPI TestClient |
+| База данных | PostgreSQL 16 (SQLite in-memory в тестах) |
+| Инфраструктура | Docker, Docker Compose, nginx, multi-stage сборки |
+| Безопасность | JWT HS256, bcrypt, RBAC, двухслойный rate limiting, секреты только в env |
+| Тестирование | pytest (67 тестов), FastAPI TestClient |
 
-## Security
+## Безопасность
 
-- bcrypt password hashing; passwords truncated to the 72-byte bcrypt limit
-- JWT HS256 with pinned algorithm and expiry
-- Role checks on the backend for admin-only endpoints
-- `password_hash` never leaves the API
-- webhook secret compared with `hmac.compare_digest`
-- FastAPI rate limiting (429) on login/register/webhook + nginx `limit_req`
-- input length limits on every user-controlled field
-- parameterized ORM queries only (no raw SQL)
-- backend runs as non-root; PostgreSQL has no published ports; backend
-  reachable only through nginx
-- no secrets in git history, images, or the frontend bundle (audited)
-- error responses sanitized (no tracebacks, paths, or internals)
-- per-business data isolation; webhook idempotency
+- хеширование паролей bcrypt; пароли усекаются до 72-байтового лимита bcrypt
+- JWT HS256 с запиненным алгоритмом и expiry
+- проверка ролей на backend для admin-эндпоинтов
+- `password_hash` никогда не возвращается API
+- секрет вебхука сверяется через `hmac.compare_digest`
+- rate limiting FastAPI (429) на login/register/webhook + nginx `limit_req`
+- ограничения длины на каждое пользовательское поле
+- только параметризованные ORM-запросы (без raw SQL)
+- backend работает не из-под root; PostgreSQL без опубликованных портов;
+  backend доступен только через nginx
+- секретов нет в истории git, образах и фронтенд-бандле (проверено аудитом)
+- sanitized-ответы об ошибках (без traceback, путей и внутренних деталей)
+- изоляция данных по бизнесам; идемпотентность вебхука
 
-Details and known limitations: [docs/SECURITY.md](docs/SECURITY.md).
+Подробности и ограничения: [docs/SECURITY.md](docs/SECURITY.md) (англ.).
 
-## Docker / Deployment
+## Docker / развёртывание
 
-### Local / Demo
+### Локально / демо
 
 ```bash
-cp .env.example .env      # set POSTGRES_PASSWORD and JWT_SECRET
+cp .env.example .env      # задать POSTGRES_PASSWORD и JWT_SECRET
 docker compose up --build -d
 curl http://localhost/api/health
 ```
 
-The stack: PostgreSQL (health-checked) → backend (migrations + optional
-demo seed + uvicorn) → frontend init container (copies `dist/` to the
-shared volume) → nginx. Demo login (only with `AI_MODE=mock` on an
-empty database — public by design):
-`admin@luna.ru / admin12345` (admin), `maria@luna.ru / manager12345`
-(manager).
+Стек: PostgreSQL (health-check) → backend (миграции + опциональный
+демо-сид + uvicorn) → init-контейнер фронтенда (копирует `dist/` в
+общий volume) → nginx. Демо-вход (только при `AI_MODE=mock` на пустой
+базе — публичен by design): `admin@luna.ru / admin12345` (админ),
+`maria@luna.ru / manager12345` (менеджер).
 
-Run the test suite inside the backend container (Python 3.12):
+Прогон тестов внутри контейнера backend (Python 3.12):
 
 ```bash
 docker run --rm -v "$(pwd)/backend/tests:/app/tests" \
   --entrypoint pytest flowpilot-backend -q
 ```
 
-### Production
+### Продакшен
 
-A complete VPS guide exists — Ubuntu, UFW, Let's Encrypt HTTPS
-(certbot), certificate renewal cron, `pg_dump` backups, update
-procedure: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+Полная инструкция для VPS готова — Ubuntu, UFW, HTTPS через
+Let's Encrypt (certbot), cron-обновление сертификатов, бэкапы
+`pg_dump`, процедура обновления: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
+(англ.).
 
-The HTTPS path (certificates + `docker-compose.override.yml` +
-per-domain `ssl.conf`, including the Telegram secret-header mapping)
-was rehearsed locally with a self-signed certificate and verified
-end-to-end against the running stack. **An actual production VPS
-deployment has not been performed in this project.**
+HTTPS-путь (сертификаты + `docker-compose.override.yml` + `ssl.conf`
+на домен, включая маппинг секретного заголовка Telegram) прорепетирован
+локально с self-signed сертификатом и проверен на живом стеке.
+**Реальный деплой на VPS в рамках проекта не выполнялся.**
 
-## Testing
+## Тестирование
 
-**67/67 passed** — run locally (Python 3.14) and inside the Docker
-image (Python 3.12). Coverage: auth (register/login/bad
-credentials/protected endpoints), requests (create, filters, status
-transitions, permissions, business isolation), AI (mock classification,
-invalid JSON fallback, retry, unknown intents), Telegram webhook
-(valid/missing/wrong secret, duplicate updates), security (JWT
-tampering/expiry, password exposure, rate limits, input bounds, error
-leak prevention). No CI pipeline — tests are run manually.
+**67/67 пройдено** — локально (Python 3.14) и внутри Docker-образа
+(Python 3.12). Покрытие: аутентификация (регистрация/логин/неверные
+креды/защищённые эндпоинты), заявки (создание, фильтры, смена
+статусов, права, изоляция бизнесов), AI (классификация Mock, fallback
+на невалидном JSON, ретрай, неизвестные интенты), Telegram-вебхук
+(валидный/отсутствующий/неверный секрет, дубликаты update), безопасность
+(подмена и истечение JWT, утечка паролей, rate limits, границы входных
+данных, отсутствие утечек в ошибках). CI-пайплайна нет — тесты
+запускаются вручную.
 
-## Screenshots
+## Скриншоты
 
-| Login | Dashboard |
+| Вход | Дашборд |
 |---|---|
-| ![Login](docs/screenshots/01-login.png) | ![Dashboard](docs/screenshots/02-dashboard.png) |
+| ![Вход](docs/screenshots/01-login.png) | ![Дашборд](docs/screenshots/02-dashboard.png) |
 
-| Requests | Request detail (AI analysis, status handling) |
+| Заявки | Карточка заявки (AI-анализ, статусы) |
 |---|---|
-| ![Requests](docs/screenshots/03-requests.png) | ![Request detail](docs/screenshots/04-request-detail.png) |
+| ![Заявки](docs/screenshots/03-requests.png) | ![Карточка заявки](docs/screenshots/04-request-detail.png) |
 
-| Analytics | Settings (admin) |
+| Аналитика | Настройки (админ) |
 |---|---|
-| ![Analytics](docs/screenshots/07-analytics.png) | ![Settings](docs/screenshots/08-settings.png) |
+| ![Аналитика](docs/screenshots/07-analytics.png) | ![Настройки](docs/screenshots/08-settings.png) |
 
-All screenshots: [docs/screenshots/](docs/screenshots/).
+Все скриншоты: [docs/screenshots/](docs/screenshots/).
 
-## Project Structure
+## Структура проекта
 
 ```
 flowpilot/
 ├── backend/
 │   ├── app/
-│   │   ├── api/            # routes, dependencies
-│   │   ├── core/           # config, security, exceptions, rate limiting
-│   │   ├── models/         # SQLAlchemy models
-│   │   ├── schemas/        # Pydantic schemas
-│   │   ├── services/       # business logic
-│   │   ├── repositories/   # database access
+│   │   ├── api/            # роуты, зависимости
+│   │   ├── core/           # конфигурация, безопасность, rate limiting
+│   │   ├── models/         # SQLAlchemy-модели
+│   │   ├── schemas/        # Pydantic-схемы
+│   │   ├── services/       # бизнес-логика
+│   │   ├── repositories/   # доступ к БД
 │   │   ├── db/             # engine, session, base
-│   │   ├── scripts/        # demo seed
+│   │   ├── scripts/        # демо-сид
 │   │   └── main.py
-│   ├── alembic/            # migrations
-│   ├── tests/              # 67 tests
+│   ├── alembic/            # миграции
+│   ├── tests/              # 67 тестов
 │   ├── Dockerfile
-│   └── entrypoint.sh       # migrations + seed + uvicorn
+│   └── entrypoint.sh       # миграции + сид + uvicorn
 ├── frontend/               # React + TypeScript + Vite + Tailwind
 │   └── src/{pages, components, contexts, services, types}
-├── nginx/                  # reverse proxy configuration
-├── docs/                   # SECURITY.md, DEPLOYMENT.md, screenshots
+├── nginx/                  # конфигурация reverse proxy
+├── docs/                   # SECURITY.md, DEPLOYMENT.md, скриншоты
 └── docker-compose.yml
 ```
 
-## What I Learned
+## Что я узнал
 
-**"Works locally" ≠ "works in the target runtime."** The whole backend
-passed 51 tests on my machine (Python 3.14) and crashed on import in
-the Docker image (Python 3.12). The cause: a repository method named
-`list` shadowed the builtin `list` inside the class body, so the next
-method's `list[Request]` annotation resolved to the *method*, not the
-builtin. Python 3.14 hides this (PEP 649 made annotations lazy), 3.12
-evaluates them eagerly. The fix was one line per file —
-`from __future__ import annotations`. Lesson: test in the same runtime
-you ship, and a green local suite proves nothing about the container.
+**«Работает локально» ≠ «работает в целевом runtime».** Весь backend
+проходил 51 тест на моей машине (Python 3.14) и падал при импорте в
+Docker-образе (Python 3.12). Причина: метод репозитория с именем `list`
+затенял builtin `list` внутри тела класса, и аннотация `list[Request]`
+следующего метода резолвилась в *метод*, а не builtin. Python 3.14 это
+прячет (PEP 649 сделал аннотации ленивыми), 3.12 вычисляет их
+eagerly. Фикс — одна строка на файл: `from __future__ import
+annotations`. Урок: тестируй в том же runtime, в котором шипишь, —
+зелёный локальный прогон ничего не говорит о контейнере.
 
-**Dead libraries bite later.** `passlib` (last release 2020) broke with
-modern `bcrypt` on Python 3.14 — it crashed on a test hash. Dropping
-the wrapper and using `bcrypt` directly removed a dead dependency and
-made the failure mode obvious.
+**Мёртвые библиотеки кусаются позже.** `passlib` (последний релиз —
+2020) сломался с современным `bcrypt` на Python 3.14 — падал уже на
+тестовом хеше. Отказ от обёртки в пользу прямого `bcrypt` убрал мёртвую
+зависимость и сделал причину отказа очевидной.
 
-**SQLite forgives, PostgreSQL doesn't.** Two schema bugs survived every
-SQLite run and exploded on PostgreSQL: `alembic --autogenerate`
-duplicated CHECK constraints (same name twice in one table), and a
-history table with two enum columns shared one constraint name.
-SQLite silently accepted both. Lesson: run migrations against the real
-database before calling a schema done.
+**SQLite прощает, PostgreSQL — нет.** Два бага схемы пережили все
+прогоны на SQLite и взорвались на PostgreSQL: `alembic --autogenerate`
+продублировал CHECK-констрейнты (одно имя дважды в таблице), а таблица
+истории с двумя enum-колонками делила одно имя констрейнта. SQLite
+молча принимал оба. Урок: прогоняй миграции на настоящей БД, прежде
+чем считать схему готовой.
 
-## Engineering Decisions
+## Инженерные решения
 
-- **Docker Compose** — the whole environment (DB, backend, frontend,
-  nginx) in one file; a reviewer reproduces the stack with one command.
-- **PostgreSQL in production, SQLite for tests** — tests stay fast and
-  parallel; the real engine is still exercised by running the suite
-  inside the container and by the compose stack.
-- **nginx as the single entry point** — static files served without
-  touching Python, rate limiting before the app, TLS terminated at the
-  infrastructure layer.
-- **Non-root backend container** — cheap hardening, standard practice.
-- **Two rate-limiting layers** — nginx stops floods even if the app is
-  degraded; FastAPI limits precisely per route and works without nginx
-  (local dev). Defense in depth.
-- **In-memory rate limiter** — honest trade-off: correct for a single
-  process, which is this project's scale. Scaling out means Redis or a
-  shared store; adding it now would be speculative infrastructure.
-- **JWT in localStorage** — simpler than httpOnly cookies + CSRF
-  protection, with a documented XSS trade-off. Acceptable at this
-  stage, revisit for real production.
-- **HTTPS in the deployment layer** — the application never sees TLS;
-  certificates and renewal belong to the infrastructure (see
-  DEPLOYMENT.md), which keeps the app container simple and identical
-  in dev and prod.
+- **Docker Compose** — вся среда (БД, backend, фронтенд, nginx) в одном
+  файле; ревьюер воспроизводит стек одной командой.
+- **PostgreSQL в продакшене, SQLite в тестах** — тесты остаются
+  быстрыми; реальный движок всё же проверяется прогоном внутри
+  контейнера и compose-стеком.
+- **nginx — единственная точка входа** — статика без Python, rate
+  limiting до приложения, TLS терминируется на уровне инфраструктуры.
+- **Backend не из-под root** — дешёвый харденинг, стандартная практика.
+- **Два слоя rate limiting** — nginx останавливает флуд, даже если
+  приложение деградировало; FastAPI лимитирует точно по роуту и работает
+  без nginx (локальная разработка). Defense in depth.
+- **In-memory rate limiter** — честный trade-off: корректен для одного
+  процесса, что и есть масштаб этого проекта. Горизонтальное
+  масштабирование потребует Redis; добавлять его сейчас —
+  спекулятивная инфраструктура.
+- **JWT в localStorage** — проще, чем httpOnly-куки + CSRF-защита, с
+  задокументированным XSS-риском. Приемлемо на этом этапе, пересмотреть
+  для реального продакшена.
+- **HTTPS в слое деплоя** — приложение не знает про TLS; сертификаты и
+  обновления принадлежат инфраструктуре (см. DEPLOYMENT.md), что
+  держит контейнер простым и одинаковым в dev и prod.
 
-## Known Limitations
+## Известные ограничения
 
-- In-memory rate limiting covers a single process (Redis needed for
-  horizontal scaling).
-- JWT in `localStorage` — an XSS would expose the token.
-- HTTPS requires the production deployment (rehearsed locally, not
-  performed on a VPS).
-- Production VPS deployment was **not** executed — only documented.
-- Telegram integration is not verified end-to-end with a real bot
-  (the webhook endpoint and secret-header mapping are verified).
-- `AI_MODE=mock` is the demo default: MockProvider does keyword
-  matching, not real NLP.
-- Demo credentials are public by design; the seed runs only when
-  `AI_MODE=mock` on an empty database.
-- No CI pipeline — tests are run manually.
+- In-memory rate limiting покрывает один процесс (для масштабирования
+  нужен Redis).
+- JWT в `localStorage` — при успешном XSS токен будет скомпрометирован.
+- HTTPS требует продакшен-деплоя (прорепетирован локально, на VPS не
+  выполнялся).
+- Деплой на продакшен-VPS **не** выполнялся — только документация.
+- Интеграция с Telegram не проверена end-to-end с реальным ботом
+  (проверены эндпоинт и маппинг секретного заголовка).
+- `AI_MODE=mock` — демо-режим по умолчанию: MockProvider делает
+  keyword-matching, а не настоящий NLP.
+- Демо-кредиты публичны by design; сид запускается только при
+  `AI_MODE=mock` на пустой базе.
+- CI-пайплайна нет — тесты запускаются вручную.
 
-## Documentation
+## Документация
 
-- [docs/SECURITY.md](docs/SECURITY.md) — security review: what was
-  checked, fixed, and what remains limited.
-- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — VPS deployment guide
-  (Ubuntu, Docker, Let's Encrypt, backups, updates).
-- [docs/CASE_STUDY.md](docs/CASE_STUDY.md) — portfolio case study.
-- [AGENTS.md](AGENTS.md) — the original build plan and architecture
-  rules the project follows.
+- [docs/SECURITY.md](docs/SECURITY.md) — security review: что
+  проверено, что исправлено, что остаётся ограничением (англ.).
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — инструкция деплоя на VPS
+  (Ubuntu, Docker, Let's Encrypt, бэкапы, обновления) (англ.).
+- [docs/CASE_STUDY.md](docs/CASE_STUDY.md) — case study для портфолио
+  (англ.).
+- [AGENTS.md](AGENTS.md) — исходный план проекта и архитектурные
+  правила, которым он следует.
