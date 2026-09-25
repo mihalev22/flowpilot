@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+sqlalchemy
+alembic
+pydantic
+pydantic-settings
+email-validator
+bcrypt
+PyJWT
+httpx
+pytest
+psycopg2-binary
