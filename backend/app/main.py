@@ -5,19 +5,19 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import auth, clients, dashboard, requests, webhooks
+from app.api import auth, clients, dashboard, requests, services, settings, webhooks
 from app.core.config import get_settings, validate_ai_config
 from app.core.exceptions import AppError
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-settings = get_settings()
+app_settings = get_settings()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    validate_ai_config(settings)
+    validate_ai_config(app_settings)
     yield
 
 
@@ -25,7 +25,7 @@ app = FastAPI(title="FlowPilot API", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins_list,
+    allow_origins=app_settings.cors_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -36,6 +36,8 @@ app.include_router(auth.router)
 app.include_router(requests.router)
 app.include_router(clients.router)
 app.include_router(dashboard.router)
+app.include_router(services.router)
+app.include_router(settings.router)
 
 
 @app.get("/api/health")

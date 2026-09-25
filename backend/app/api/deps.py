@@ -12,6 +12,7 @@ from app.repositories.users import UserRepository
 from app.services.ai import AIAnalysisService, build_provider
 from app.services.analytics import AnalyticsService
 from app.services.auth import AuthService
+from app.services.catalog import CatalogService
 from app.services.clients import ClientService
 from app.services.requests import RequestService
 from app.services.telegram import TelegramService
@@ -58,6 +59,10 @@ def get_request_service(
 
 def get_client_service(db: Session = Depends(get_db)) -> ClientService:
     return ClientService(db)
+
+
+def get_catalog_service(db: Session = Depends(get_db)) -> CatalogService:
+    return CatalogService(db)
 
 
 def get_telegram_service(
