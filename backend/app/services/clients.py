@@ -35,4 +35,4 @@ class ClientService:
         name = f"{tg_user.first_name} {tg_user.last_name}".strip()
         if not name:
             name = tg_user.username or f"Telegram {tg_user.id}"
-        return self.repo.create(business_id=business_id, name=name, telegram_user_id=tg_user.id)
+        return self.repo.create(business_id=business_id, name=name[:200], telegram_user_id=tg_user.id)

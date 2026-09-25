@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from app.api.deps import get_client_service, get_current_user, get_request_service
 from app.models import User
@@ -12,7 +12,7 @@ router = APIRouter(prefix="/api/clients", tags=["clients"])
 
 @router.get("", response_model=list[ClientOut])
 def list_clients(
-    search: str | None = None,
+    search: str | None = Query(default=None, max_length=100),
     user: User = Depends(get_current_user),
     service: ClientService = Depends(get_client_service),
 ):
